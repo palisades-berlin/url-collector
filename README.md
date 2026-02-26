@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="assets/url_collector_github_banner.png" alt="URL Collector" width="100%"/>
+</p>
+
+
 # URL Collector
 
 A Chrome extension that collects clean URLs from your browser tabs — automatically stripping tracking and noise parameters (UTM, fbclid, gclid, etc.) before saving them.
