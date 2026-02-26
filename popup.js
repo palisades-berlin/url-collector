@@ -48,10 +48,6 @@ function cleanUrl(rawUrl) {
   }
 }
 
-// ── n8n config ───────────────────────────────────────────────────────────────
-
-const N8N_WEBHOOK = 'http://localhost:5678/webhook/89adfca7-f1e0-4bd9-879e-8b55d41de66d';
-
 // ── Storage helpers ──────────────────────────────────────────────────────────
 
 function loadUrls() {
@@ -134,71 +130,6 @@ function renderList(urls) {
   });
 }
 
-// ── Send to n8n ──────────────────────────────────────────────────────────────
-
-async function sendToN8n() {
-  const btn  = document.getElementById('btn-n8n');
-  const urls = await loadUrls();
-
-  if (urls.length === 0) { showToast('No URLs to send'); return; }
-
-  // Loading state
-  btn.disabled   = true;
-  btn.innerHTML  = '<div class="spinner"></div> Processing…';
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000); // 2 min for Perplexity calls
-    const res  = await fetch(N8N_WEBHOOK, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ URLs: urls.join('\n') }),
-      signal:  controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    // Success
-    btn.classList.add('success');
-    btn.innerHTML = `
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-      </svg>
-      Sent ${urls.length} URL${urls.length !== 1 ? 's' : ''} ✓`;
-    showToast(`Sent ${urls.length} URL${urls.length !== 1 ? 's' : ''} to n8n`);
-
-    setTimeout(() => {
-      btn.classList.remove('success');
-      btn.disabled  = false;
-      btn.innerHTML = `
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-        </svg>
-        Send to n8n`;
-    }, 2500);
-
-  } catch (err) {
-    btn.classList.add('error');
-    btn.innerHTML = `
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-      </svg>
-      Failed — retry?`;
-    showToast(`n8n error: ${err.message}`);
-
-    setTimeout(() => {
-      btn.classList.remove('error');
-      btn.disabled  = false;
-      btn.innerHTML = `
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-        </svg>
-        Send to n8n`;
-    }, 3000);
-  }
-}
-
 // ── Clear button: two-step confirmation ──────────────────────────────────────
 
 let clearConfirmTimer = null;
@@ -236,9 +167,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderList(urls);
     showToast('URL added');
   });
-
-  // Send to n8n
-  document.getElementById('btn-n8n').addEventListener('click', sendToN8n);
 
   // Copy all
   document.getElementById('btn-copy').addEventListener('click', async () => {

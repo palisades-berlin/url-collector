@@ -4,7 +4,6 @@
   "version": "1.0",
   "description": "Collect clean URLs (without tracking parameters) from your browser tabs.",
   "permissions": ["activeTab", "storage", "tabs"],
-  "host_permissions": ["http://localhost:5678/*"],
   "action": {
     "default_popup": "popup.html",
     "default_title": "URL Collector",

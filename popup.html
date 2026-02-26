@@ -172,46 +172,6 @@
       to   { opacity: 0.75; }
     }
 
-    /* ── Send to n8n ── */
-    .n8n-section {
-      padding: 10px 14px;
-      background: #f0f7f0;
-      border-top: 1px solid #c8e6c9;
-      border-bottom: 1px solid #c8e6c9;
-    }
-    .btn-n8n {
-      width: 100%;
-      padding: 10px 16px;
-      background: #2e7d32;
-      color: #fff;
-      border: none;
-      border-radius: 7px;
-      font-size: 13.5px;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: background 0.18s, transform 0.1s;
-      letter-spacing: 0.2px;
-    }
-    .btn-n8n:hover:not(:disabled)  { background: #1b5e20; }
-    .btn-n8n:active:not(:disabled) { background: #1b5e20; transform: scale(0.99); }
-    .btn-n8n:disabled { opacity: 0.7; cursor: not-allowed; }
-    .btn-n8n.success  { background: #388e3c; }
-    .btn-n8n.error    { background: #c62828; }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .spinner {
-      width: 15px; height: 15px;
-      border: 2px solid rgba(255,255,255,0.35);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      flex-shrink: 0;
-    }
-
     /* ── Toast ── */
     #toast {
       position: fixed;
@@ -268,16 +228,6 @@
       <span class="empty-title">No URLs collected yet</span>
       <span class="empty-sub">Click "Add Current Tab URL"<br>to start building your list.</span>
     </div>
-  </div>
-
-  <!-- Send to n8n -->
-  <div class="n8n-section">
-    <button class="btn-n8n" id="btn-n8n">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-      </svg>
-      Send to n8n
-    </button>
   </div>
 
   <!-- Footer actions -->
