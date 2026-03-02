@@ -12,7 +12,7 @@ No build system or package manager — this is pure vanilla JavaScript. Load dir
 
 1. Open `chrome://extensions`
 2. Enable **Developer Mode**
-3. Click **Load unpacked** and select the `url-collector/` folder
+3. Click **Load unpacked** and select this repository's root folder
 
 After code changes, click the reload button on the extension card in `chrome://extensions`.
 
