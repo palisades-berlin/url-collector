@@ -16,7 +16,9 @@ A Chrome extension that collects clean URLs from your browser tabs — automatic
 
 ## Installation
 
-Chrome does not allow installing extensions from outside the Chrome Web Store without enabling Developer Mode first.
+Install directly from the **[Chrome Web Store](https://chromewebstore.google.com/detail/url-collector/ogdnmkpapoohpgdjkghaebfbgiklichl)**.
+
+Alternatively, you can load it manually (Chrome Developer Mode):
 
 1. [Download or clone this repository](https://github.com/palisades-berlin/url-collector/archive/refs/heads/main.zip) and unzip it
 2. Open Chrome and navigate to `chrome://extensions`
