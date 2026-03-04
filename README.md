@@ -12,8 +12,10 @@ A Chrome extension that collects clean URLs from your browser tabs — automatic
 - **Add current tab** — saves the active tab's URL to your list with one click
 - **Add all tabs** — collects all open tabs in the current window at once, skipping duplicates
 - **Tracking parameter removal** — strips UTM, Google Ads, Facebook, Microsoft Ads, and other common tracking params
-- **Copy All** — copies the full list to your clipboard, one URL per line
-- **Export** — saves your URL list as a `urls.txt` file
+- **Copy** — copies the full list to your clipboard, one URL per line
+- **Save TXT** — saves your URL list as a `urls.txt` file
+- **Save CSV** — saves your URL list as a `urls.csv` file (with header row)
+- **Email** — opens your email client with all URLs pre-filled in the message body
 - **Clear All** — removes all collected URLs (with confirmation step)
 
 ## Installation
