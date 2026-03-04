@@ -173,22 +173,27 @@
       background: #fff;
       border-top: 1px solid #e3e8ef;
       display: flex;
-      gap: 8px;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .footer-row {
+      display: flex;
+      gap: 6px;
     }
     .btn-footer {
       flex: 1;
-      padding: 8px 6px;
+      padding: 8px 4px;
       border: 1.5px solid #e0e0e0;
       border-radius: 7px;
       background: #fff;
       color: #455a64;
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 5px;
+      gap: 4px;
       transition: all 0.18s;
     }
     .btn-footer:hover { background: #f5f5f5; border-color: #bdbdbd; }
@@ -276,24 +281,40 @@
 
   <!-- Footer actions -->
   <div class="footer">
-    <button class="btn-footer" id="btn-copy" aria-label="Copy all URLs to clipboard">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
-      </svg>
-      Copy All
-    </button>
-    <button class="btn-footer" id="btn-export" aria-label="Export URLs as text file">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-      </svg>
-      Export
-    </button>
-    <button class="btn-footer danger" id="btn-clear" aria-label="Clear all URLs">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-      </svg>
-      Clear All
-    </button>
+    <div class="footer-row">
+      <button class="btn-footer" id="btn-copy" aria-label="Copy all URLs to clipboard">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+        </svg>
+        Copy
+      </button>
+      <button class="btn-footer" id="btn-export" aria-label="Save URLs as text file">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+        </svg>
+        Save TXT
+      </button>
+      <button class="btn-footer" id="btn-export-csv" aria-label="Save URLs as CSV file">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M3 3h18v2H3zm0 4h18v2H3zm0 4h18v2H3zm0 4h18v2H3zm0 4h18v2H3z"/>
+        </svg>
+        Save CSV
+      </button>
+      <button class="btn-footer" id="btn-email" aria-label="Email URLs">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+        </svg>
+        Email
+      </button>
+    </div>
+    <div class="footer-row">
+      <button class="btn-footer danger" id="btn-clear" aria-label="Clear all URLs">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+        </svg>
+        Clear All
+      </button>
+    </div>
   </div>
 
   <div id="toast" role="status" aria-live="polite"></div>

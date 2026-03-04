@@ -245,7 +245,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(blobUrl);
-    showToast(`Exported ${urls.length} URL${urls.length !== 1 ? 's' : ''}`);
+    showToast(`Saved ${urls.length} URL${urls.length !== 1 ? 's' : ''} as TXT`);
+  });
+
+  // Export as .csv file
+  document.getElementById('btn-export-csv').addEventListener('click', async () => {
+    const urls = await loadUrls();
+    if (urls.length === 0) { showToast('Nothing to export'); return; }
+    const csv = 'url\n' + urls.map(u => `"${u.replace(/"/g, '""')}"`).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = 'urls.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+    showToast(`Saved ${urls.length} URL${urls.length !== 1 ? 's' : ''} as CSV`);
+  });
+
+  // Email URLs via mailto
+  document.getElementById('btn-email').addEventListener('click', async () => {
+    const urls = await loadUrls();
+    if (urls.length === 0) { showToast('Nothing to email'); return; }
+    const subject = `URL List (${urls.length} URL${urls.length !== 1 ? 's' : ''})`;
+    const body = urls.join('\n');
+    const a = document.createElement('a');
+    a.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   });
 
   // Clear — first click asks for confirmation, second click clears
