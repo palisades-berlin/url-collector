@@ -1,4 +1,8 @@
+const URL_LIMIT = 500;
+
 // Tracking / noise parameters to strip from URLs
+// Note: generic params like 'ref', 'referrer', 'source', 'si' intentionally excluded
+// as they are widely used for legitimate (non-tracking) purposes.
 const TRACKING_PARAMS = new Set([
   // Google Analytics / UTM
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
@@ -15,18 +19,14 @@ const TRACKING_PARAMS = new Set([
   'igshid',
   // Mailchimp
   'mc_cid', 'mc_eid',
-  // Google Analytics client ID
+  // Google Analytics client ID / linker
   '_ga', '_gl',
-  // Spotify share
-  'si',
   // Google Shopping
   'srsltid',
-  // Adobe
+  // Adobe Analytics
   's_kwcid',
   // Zanox
   'zanpid',
-  // Generic referral / ref params
-  'ref', 'referrer', 'source',
 ]);
 
 function cleanUrl(rawUrl) {
@@ -37,7 +37,6 @@ function cleanUrl(rawUrl) {
         url.searchParams.delete(key);
       }
     }
-    // Remove trailing ? when no params remain
     let result = url.toString();
     if (url.searchParams.size === 0 && result.endsWith('?')) {
       result = result.slice(0, -1);
@@ -46,6 +45,13 @@ function cleanUrl(rawUrl) {
   } catch {
     return rawUrl;
   }
+}
+
+function isCollectible(url) {
+  return Boolean(url) &&
+    !url.startsWith('chrome://') &&
+    !url.startsWith('chrome-extension://') &&
+    !url.startsWith('about:');
 }
 
 // ── Storage helpers ──────────────────────────────────────────────────────────
@@ -62,7 +68,7 @@ function saveUrls(urls) {
   );
 }
 
-// ── Active tab ───────────────────────────────────────────────────────────────
+// ── Tab helpers ───────────────────────────────────────────────────────────────
 
 function getCurrentTabUrl() {
   return new Promise(resolve =>
@@ -70,6 +76,18 @@ function getCurrentTabUrl() {
       resolve(tabs[0]?.url || '')
     )
   );
+}
+
+function getAllTabUrls() {
+  return new Promise(resolve =>
+    chrome.tabs.query({ currentWindow: true }, tabs =>
+      resolve(tabs.map(t => t.url || '').filter(Boolean))
+    )
+  );
+}
+
+function openUrl(url) {
+  chrome.tabs.create({ url });
 }
 
 // ── UI helpers ───────────────────────────────────────────────────────────────
@@ -111,13 +129,22 @@ function renderList(urls) {
     <div class="url-item">
       <span class="url-index">${i + 1}</span>
       <span class="url-text" title="${esc(url)}">${esc(url)}</span>
-      <button class="btn-remove" data-index="${i}" title="Remove">
+      <button class="btn-open" data-index="${i}" title="Open in new tab" aria-label="Open URL in new tab">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+        </svg>
+      </button>
+      <button class="btn-remove" data-index="${i}" title="Remove" aria-label="Remove URL">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
           <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
         </svg>
       </button>
     </div>
   `).join('');
+
+  list.querySelectorAll('.btn-open').forEach((btn, i) => {
+    btn.addEventListener('click', () => openUrl(urls[i]));
+  });
 
   list.querySelectorAll('.btn-remove').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -152,12 +179,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Add current tab URL
   document.getElementById('btn-add').addEventListener('click', async () => {
     const raw = await getCurrentTabUrl();
-    if (!raw || raw.startsWith('chrome://') || raw.startsWith('chrome-extension://') || raw.startsWith('about:')) {
+    if (!isCollectible(raw)) {
       showToast('Cannot collect this page');
       return;
     }
+    const urls = await loadUrls();
+    if (urls.length >= URL_LIMIT) {
+      showToast(`List full (max ${URL_LIMIT} URLs)`);
+      return;
+    }
     const clean = cleanUrl(raw);
-    const urls  = await loadUrls();
     if (urls.includes(clean)) {
       showToast('Already in list');
       return;
@@ -168,12 +199,53 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast('URL added');
   });
 
+  // Add all tabs in current window
+  document.getElementById('btn-add-all').addEventListener('click', async () => {
+    const rawUrls = await getAllTabUrls();
+    const validUrls = rawUrls.filter(isCollectible);
+    if (validUrls.length === 0) { showToast('No collectible tabs found'); return; }
+
+    const urls = await loadUrls();
+    let added = 0;
+    for (const raw of validUrls) {
+      if (urls.length >= URL_LIMIT) break;
+      const clean = cleanUrl(raw);
+      if (!urls.includes(clean)) {
+        urls.push(clean);
+        added++;
+      }
+    }
+    await saveUrls(urls);
+    renderList(urls);
+    showToast(added === 0 ? 'All tabs already in list' : `Added ${added} URL${added !== 1 ? 's' : ''}`);
+  });
+
   // Copy all
   document.getElementById('btn-copy').addEventListener('click', async () => {
     const urls = await loadUrls();
     if (urls.length === 0) { showToast('Nothing to copy'); return; }
-    await navigator.clipboard.writeText(urls.join('\n'));
-    showToast(`Copied ${urls.length} URL${urls.length !== 1 ? 's' : ''}`);
+    try {
+      await navigator.clipboard.writeText(urls.join('\n'));
+      showToast(`Copied ${urls.length} URL${urls.length !== 1 ? 's' : ''}`);
+    } catch {
+      showToast('Clipboard access denied');
+    }
+  });
+
+  // Export as .txt file
+  document.getElementById('btn-export').addEventListener('click', async () => {
+    const urls = await loadUrls();
+    if (urls.length === 0) { showToast('Nothing to export'); return; }
+    const blob = new Blob([urls.join('\n')], { type: 'text/plain' });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = 'urls.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+    showToast(`Exported ${urls.length} URL${urls.length !== 1 ? 's' : ''}`);
   });
 
   // Clear — first click asks for confirmation, second click clears
@@ -181,7 +253,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btn = document.getElementById('btn-clear');
 
     if (!btn.classList.contains('confirming')) {
-      // First click: enter confirmation state
       const urls = await loadUrls();
       if (urls.length === 0) { showToast('List is already empty'); return; }
       btn.classList.add('confirming');
@@ -193,7 +264,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       clearTimeout(clearConfirmTimer);
       clearConfirmTimer = setTimeout(resetClearButton, 3000);
     } else {
-      // Second click: perform clear
       clearTimeout(clearConfirmTimer);
       resetClearButton();
       await saveUrls([]);
