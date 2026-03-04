@@ -39,3 +39,11 @@ The extension icon will appear in your toolbar. Pin it for easy access.
 3. Click **Add Current Tab URL** — the clean URL is added to your list
 4. Repeat for as many tabs as you like
 5. Click **Copy All** to copy the list to your clipboard
+
+## Local checks
+
+Run the utility-function tests:
+
+```bash
+node tests/url_utils.test.js
+```

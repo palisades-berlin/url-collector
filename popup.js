@@ -1,93 +1,80 @@
 const URL_LIMIT = 500;
 
-// Tracking / noise parameters to strip from URLs
-// Note: generic params like 'ref', 'referrer', 'source', 'si' intentionally excluded
-// as they are widely used for legitimate (non-tracking) purposes.
-const TRACKING_PARAMS = new Set([
-  // Google Analytics / UTM
-  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-  'utm_id', 'utm_source_platform', 'utm_creative_format', 'utm_marketing_tactic',
-  // Google Ads
-  'gclid', 'gclsrc', 'dclid', 'gbraid', 'wbraid',
-  // Facebook
-  'fbclid',
-  // Microsoft Ads
-  'msclkid',
-  // Twitter / X
-  'twclid',
-  // Instagram
-  'igshid',
-  // Mailchimp
-  'mc_cid', 'mc_eid',
-  // Google Analytics client ID / linker
-  '_ga', '_gl',
-  // Google Shopping
-  'srsltid',
-  // Adobe Analytics
-  's_kwcid',
-  // Zanox
-  'zanpid',
-]);
+const {
+  cleanUrl,
+  normalizeUrlForCompare,
+  isCollectibleUrl,
+  escapeCsvCell,
+} = globalThis.UrlUtils || {};
 
-function cleanUrl(rawUrl) {
-  try {
-    const url = new URL(rawUrl);
-    for (const key of [...url.searchParams.keys()]) {
-      if (TRACKING_PARAMS.has(key.toLowerCase())) {
-        url.searchParams.delete(key);
-      }
-    }
-    let result = url.toString();
-    if (url.searchParams.size === 0 && result.endsWith('?')) {
-      result = result.slice(0, -1);
-    }
-    return result;
-  } catch {
-    return rawUrl;
-  }
+if (!cleanUrl || !normalizeUrlForCompare || !isCollectibleUrl || !escapeCsvCell) {
+  throw new Error('UrlUtils is not loaded');
 }
 
-function isCollectible(url) {
-  return Boolean(url) &&
-    !url.startsWith('chrome://') &&
-    !url.startsWith('chrome-extension://') &&
-    !url.startsWith('about:');
+// ── Chrome API helpers with error handling ───────────────────────────────────
+
+function chromeCall(invoke) {
+  return new Promise((resolve, reject) => {
+    invoke(result => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(result);
+    });
+  });
+}
+
+function reportError(err, userMessage) {
+  console.error(err);
+  showToast(userMessage);
 }
 
 // ── Storage helpers ──────────────────────────────────────────────────────────
 
 function loadUrls() {
-  return new Promise(resolve =>
-    chrome.storage.local.get({ urls: [] }, r => resolve(r.urls))
-  );
+  return chromeCall(done => chrome.storage.local.get({ urls: [] }, done))
+    .then(result => (Array.isArray(result.urls) ? result.urls.filter(u => typeof u === 'string') : []));
 }
 
 function saveUrls(urls) {
-  return new Promise(resolve =>
-    chrome.storage.local.set({ urls }, resolve)
-  );
+  return chromeCall(done => chrome.storage.local.set({ urls }, done));
+}
+
+let urlMutationQueue = Promise.resolve();
+function mutateUrls(mutator) {
+  const run = urlMutationQueue.then(async () => {
+    const urls = await loadUrls();
+    const nextUrls = await mutator([...urls]);
+    await saveUrls(nextUrls);
+    return nextUrls;
+  });
+  urlMutationQueue = run.catch(() => {});
+  return run;
 }
 
 // ── Tab helpers ───────────────────────────────────────────────────────────────
 
 function getCurrentTabUrl() {
-  return new Promise(resolve =>
-    chrome.tabs.query({ active: true, currentWindow: true }, tabs =>
-      resolve(tabs[0]?.url || '')
-    )
-  );
+  return chromeCall(done => chrome.tabs.query({ active: true, currentWindow: true }, done))
+    .then(tabs => tabs[0]?.url || '');
 }
 
 function getAllTabUrls() {
-  return new Promise(resolve =>
-    chrome.tabs.query({ currentWindow: true }, tabs =>
-      resolve(tabs.map(t => t.url || '').filter(Boolean))
-    )
-  );
+  return chromeCall(done => chrome.tabs.query({ currentWindow: true }, done))
+    .then(tabs => tabs.map(t => t.url || '').filter(Boolean));
 }
 
 function openUrl(url) {
-  chrome.tabs.create({ url });
+  if (!isCollectibleUrl(url)) {
+    showToast('Cannot open this URL');
+    return;
+  }
+  chrome.tabs.create({ url }, () => {
+    if (chrome.runtime.lastError) {
+      reportError(new Error(chrome.runtime.lastError.message), 'Could not open URL');
+    }
+  });
 }
 
 // ── UI helpers ───────────────────────────────────────────────────────────────
@@ -120,6 +107,12 @@ function updateBadge(count) {
     counter.classList.add('pop');
   }
   prevBadgeCount = count;
+}
+
+// ── URL helpers ──────────────────────────────────────────────────────────────
+
+function buildNormalizedSet(urls) {
+  return new Set(urls.map(normalizeUrlForCompare));
 }
 
 // ── DOM-based list rendering ──────────────────────────────────────────────────
@@ -155,30 +148,37 @@ async function handleRemove(item) {
   const doRemove = async () => {
     if (done) return;
     done = true;
-    const urls = await loadUrls();
-    const idx = urls.indexOf(item.dataset.url);
-    if (idx !== -1) urls.splice(idx, 1);
-    await saveUrls(urls);
-    renderList(urls);
-    showToast('URL removed');
+    try {
+      const urls = await mutateUrls(current => {
+        const idx = current.indexOf(item.dataset.url);
+        if (idx !== -1) current.splice(idx, 1);
+        return current;
+      });
+      renderList(urls);
+      showToast('URL removed');
+    } catch (err) {
+      reportError(err, 'Could not remove URL');
+      item.classList.remove('removing');
+      item.style.pointerEvents = '';
+    }
   };
   item.addEventListener('animationend', doRemove, { once: true });
   setTimeout(doRemove, 400); // fallback if animation doesn't fire
 }
 
 function renderList(urls) {
-  const list  = document.getElementById('url-list');
+  const list = document.getElementById('url-list');
   const empty = document.getElementById('empty-state');
 
   updateBadge(urls.length);
 
   if (urls.length === 0) {
-    list.style.display  = 'none';
+    list.style.display = 'none';
     empty.style.display = 'flex';
     return;
   }
 
-  list.style.display  = 'block';
+  list.style.display = 'block';
   empty.style.display = 'none';
   list.innerHTML = '';
 
@@ -214,63 +214,95 @@ function resetClearButton() {
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const initialUrls = await loadUrls();
-  renderList(initialUrls);
-  staggerItems(); // stagger-animate items on startup
+  try {
+    const initialUrls = await loadUrls();
+    renderList(initialUrls);
+    staggerItems(); // stagger-animate items on startup
+  } catch (err) {
+    reportError(err, 'Could not load stored URLs');
+  }
 
   // Add current tab URL
   document.getElementById('btn-add').addEventListener('click', async () => {
-    const raw = await getCurrentTabUrl();
-    if (!isCollectible(raw)) {
-      showToast('Cannot collect this page');
-      return;
+    try {
+      const raw = await getCurrentTabUrl();
+      if (!isCollectibleUrl(raw)) {
+        showToast('Cannot collect this page');
+        return;
+      }
+
+      const clean = cleanUrl(raw);
+      let added = false;
+      const urls = await mutateUrls(current => {
+        if (current.length >= URL_LIMIT) return current;
+        const normalized = normalizeUrlForCompare(clean);
+        const known = buildNormalizedSet(current);
+        if (known.has(normalized)) return current;
+        current.push(clean);
+        added = true;
+        return current;
+      });
+
+      if (!added) {
+        if (urls.length >= URL_LIMIT) showToast(`List full (max ${URL_LIMIT} URLs)`);
+        else showToast('Already in list');
+        return;
+      }
+
+      renderList(urls);
+      const newItem = document.querySelector('#url-list .url-item:last-child');
+      if (newItem) {
+        newItem.classList.add('animate-in');
+        newItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      showToast('URL added');
+    } catch (err) {
+      reportError(err, 'Could not add current tab URL');
     }
-    const urls = await loadUrls();
-    if (urls.length >= URL_LIMIT) {
-      showToast(`List full (max ${URL_LIMIT} URLs)`);
-      return;
-    }
-    const clean = cleanUrl(raw);
-    if (urls.includes(clean)) {
-      showToast('Already in list');
-      return;
-    }
-    urls.push(clean);
-    await saveUrls(urls);
-    renderList(urls);
-    // Animate and scroll to the new last item
-    const newItem = document.querySelector('#url-list .url-item:last-child');
-    if (newItem) {
-      newItem.classList.add('animate-in');
-      newItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-    showToast('URL added');
   });
 
   // Add all tabs in current window
   document.getElementById('btn-add-all').addEventListener('click', async () => {
-    const rawUrls = await getAllTabUrls();
-    const validUrls = rawUrls.filter(isCollectible);
-    if (validUrls.length === 0) { showToast('No collectible tabs found'); return; }
+    try {
+      const rawUrls = await getAllTabUrls();
+      const validUrls = rawUrls.filter(isCollectibleUrl);
+      if (validUrls.length === 0) {
+        showToast('No collectible tabs found');
+        return;
+      }
 
-    const urls = await loadUrls();
-    let added = 0;
-    for (const raw of validUrls) {
-      if (urls.length >= URL_LIMIT) break;
-      const clean = cleanUrl(raw);
-      if (!urls.includes(clean)) { urls.push(clean); added++; }
+      let added = 0;
+      const urls = await mutateUrls(current => {
+        const known = buildNormalizedSet(current);
+        for (const raw of validUrls) {
+          if (current.length >= URL_LIMIT) break;
+          const clean = cleanUrl(raw);
+          const normalized = normalizeUrlForCompare(clean);
+          if (!known.has(normalized)) {
+            current.push(clean);
+            known.add(normalized);
+            added++;
+          }
+        }
+        return current;
+      });
+
+      renderList(urls);
+      staggerItems();
+      showToast(added === 0 ? 'All tabs already in list' : `Added ${added} URL${added !== 1 ? 's' : ''}`);
+    } catch (err) {
+      reportError(err, 'Could not add tab URLs');
     }
-    await saveUrls(urls);
-    renderList(urls);
-    staggerItems();
-    showToast(added === 0 ? 'All tabs already in list' : `Added ${added} URL${added !== 1 ? 's' : ''}`);
   });
 
   // Copy with success state
   document.getElementById('btn-copy').addEventListener('click', async () => {
-    const urls = await loadUrls();
-    if (urls.length === 0) { showToast('Nothing to copy'); return; }
     try {
+      const urls = await loadUrls();
+      if (urls.length === 0) {
+        showToast('Nothing to copy');
+        return;
+      }
       await navigator.clipboard.writeText(urls.join('\n'));
       const btn = document.getElementById('btn-copy');
       const savedHTML = btn.innerHTML;
@@ -284,78 +316,106 @@ document.addEventListener('DOMContentLoaded', async () => {
         btn.classList.remove('success');
         btn.innerHTML = savedHTML;
       }, 1500);
-    } catch {
-      showToast('Clipboard access denied');
+    } catch (err) {
+      reportError(err, 'Clipboard access denied');
     }
   });
 
   // Export as .txt file
   document.getElementById('btn-export').addEventListener('click', async () => {
-    const urls = await loadUrls();
-    if (urls.length === 0) { showToast('Nothing to export'); return; }
-    const blob = new Blob([urls.join('\n')], { type: 'text/plain' });
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = 'urls.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
-    showToast(`Saved ${urls.length} URL${urls.length !== 1 ? 's' : ''} as TXT`);
+    try {
+      const urls = await loadUrls();
+      if (urls.length === 0) {
+        showToast('Nothing to export');
+        return;
+      }
+      const blob = new Blob([urls.join('\n')], { type: 'text/plain' });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = 'urls.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+      showToast(`Saved ${urls.length} URL${urls.length !== 1 ? 's' : ''} as TXT`);
+    } catch (err) {
+      reportError(err, 'Could not export TXT');
+    }
   });
 
   // Export as .csv file
   document.getElementById('btn-export-csv').addEventListener('click', async () => {
-    const urls = await loadUrls();
-    if (urls.length === 0) { showToast('Nothing to export'); return; }
-    const csv = 'url\n' + urls.map(u => `"${u.replace(/"/g, '""')}"`).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = 'urls.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
-    showToast(`Saved ${urls.length} URL${urls.length !== 1 ? 's' : ''} as CSV`);
+    try {
+      const urls = await loadUrls();
+      if (urls.length === 0) {
+        showToast('Nothing to export');
+        return;
+      }
+      const csv = 'url\n' + urls.map(escapeCsvCell).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = 'urls.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+      showToast(`Saved ${urls.length} URL${urls.length !== 1 ? 's' : ''} as CSV`);
+    } catch (err) {
+      reportError(err, 'Could not export CSV');
+    }
   });
 
   // Email URLs via mailto
   document.getElementById('btn-email').addEventListener('click', async () => {
-    const urls = await loadUrls();
-    if (urls.length === 0) { showToast('Nothing to email'); return; }
-    const subject = `URL List (${urls.length} URL${urls.length !== 1 ? 's' : ''})`;
-    const body = urls.join('\n');
-    const a = document.createElement('a');
-    a.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      const urls = await loadUrls();
+      if (urls.length === 0) {
+        showToast('Nothing to email');
+        return;
+      }
+      const subject = `URL List (${urls.length} URL${urls.length !== 1 ? 's' : ''})`;
+      const body = urls.join('\n');
+      const a = document.createElement('a');
+      a.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err) {
+      reportError(err, 'Could not prepare email');
+    }
   });
 
   // Clear — first click asks for confirmation, second click clears
   document.getElementById('btn-clear').addEventListener('click', async () => {
     const btn = document.getElementById('btn-clear');
 
-    if (!btn.classList.contains('confirming')) {
-      const urls = await loadUrls();
-      if (urls.length === 0) { showToast('List is already empty'); return; }
-      btn.classList.add('confirming');
-      btn.innerHTML = `
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-        </svg>
-        Confirm Clear`;
-      clearTimeout(clearConfirmTimer);
-      clearConfirmTimer = setTimeout(resetClearButton, 3000);
-    } else {
-      clearTimeout(clearConfirmTimer);
-      resetClearButton();
-      await saveUrls([]);
-      renderList([]);
-      showToast('List cleared');
+    try {
+      if (!btn.classList.contains('confirming')) {
+        const urls = await loadUrls();
+        if (urls.length === 0) {
+          showToast('List is already empty');
+          return;
+        }
+        btn.classList.add('confirming');
+        btn.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+          </svg>
+          Confirm Clear`;
+        clearTimeout(clearConfirmTimer);
+        clearConfirmTimer = setTimeout(resetClearButton, 3000);
+      } else {
+        clearTimeout(clearConfirmTimer);
+        resetClearButton();
+        const urls = await mutateUrls(() => []);
+        renderList(urls);
+        showToast('List cleared');
+      }
+    } catch (err) {
+      reportError(err, 'Could not clear list');
     }
   });
 });

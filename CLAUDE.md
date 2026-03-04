@@ -23,7 +23,12 @@ After code changes, click the reload button on the extension card in `chrome://e
 python3 create_icons.py
 ```
 
-There are no automated tests, build steps, or linting tools configured.
+**Run utility tests**:
+```bash
+node tests/url_utils.test.js
+```
+
+There is a small Node-based utility test file, but no build pipeline or linting configuration.
 
 ## Architecture
 
