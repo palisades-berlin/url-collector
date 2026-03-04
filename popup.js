@@ -109,12 +109,68 @@ function showToast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-function renderList(urls) {
-  const list    = document.getElementById('url-list');
-  const empty   = document.getElementById('empty-state');
+// Badge with pop animation (only after first render)
+let prevBadgeCount = -1;
+function updateBadge(count) {
   const counter = document.getElementById('count');
+  counter.textContent = `${count} URL${count !== 1 ? 's' : ''}`;
+  if (count !== prevBadgeCount && prevBadgeCount !== -1) {
+    counter.classList.remove('pop');
+    void counter.offsetWidth; // force reflow to restart animation
+    counter.classList.add('pop');
+  }
+  prevBadgeCount = count;
+}
 
-  counter.textContent = `${urls.length} URL${urls.length !== 1 ? 's' : ''}`;
+// ── DOM-based list rendering ──────────────────────────────────────────────────
+
+function createUrlItemEl(url) {
+  const item = document.createElement('div');
+  item.className = 'url-item';
+  item.dataset.url = url;
+  item.innerHTML = `
+    <span class="url-index"></span>
+    <span class="url-text" title="${esc(url)}">${esc(url)}</span>
+    <button class="btn-open" title="Open in new tab" aria-label="Open URL in new tab">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+      </svg>
+    </button>
+    <button class="btn-remove" title="Remove" aria-label="Remove URL">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+      </svg>
+    </button>
+  `;
+  item.querySelector('.btn-open').addEventListener('click', () => openUrl(url));
+  item.querySelector('.btn-remove').addEventListener('click', () => handleRemove(item));
+  return item;
+}
+
+// Animate item out, then remove from storage and re-render
+async function handleRemove(item) {
+  item.classList.add('removing');
+  item.style.pointerEvents = 'none';
+  let done = false;
+  const doRemove = async () => {
+    if (done) return;
+    done = true;
+    const urls = await loadUrls();
+    const idx = urls.indexOf(item.dataset.url);
+    if (idx !== -1) urls.splice(idx, 1);
+    await saveUrls(urls);
+    renderList(urls);
+    showToast('URL removed');
+  };
+  item.addEventListener('animationend', doRemove, { once: true });
+  setTimeout(doRemove, 400); // fallback if animation doesn't fire
+}
+
+function renderList(urls) {
+  const list  = document.getElementById('url-list');
+  const empty = document.getElementById('empty-state');
+
+  updateBadge(urls.length);
 
   if (urls.length === 0) {
     list.style.display  = 'none';
@@ -124,36 +180,20 @@ function renderList(urls) {
 
   list.style.display  = 'block';
   empty.style.display = 'none';
+  list.innerHTML = '';
 
-  list.innerHTML = urls.map((url, i) => `
-    <div class="url-item">
-      <span class="url-index">${i + 1}</span>
-      <span class="url-text" title="${esc(url)}">${esc(url)}</span>
-      <button class="btn-open" data-index="${i}" title="Open in new tab" aria-label="Open URL in new tab">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
-        </svg>
-      </button>
-      <button class="btn-remove" data-index="${i}" title="Remove" aria-label="Remove URL">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-        </svg>
-      </button>
-    </div>
-  `).join('');
-
-  list.querySelectorAll('.btn-open').forEach((btn, i) => {
-    btn.addEventListener('click', () => openUrl(urls[i]));
+  urls.forEach((url, i) => {
+    const item = createUrlItemEl(url);
+    item.querySelector('.url-index').textContent = i + 1;
+    list.appendChild(item);
   });
+}
 
-  list.querySelectorAll('.btn-remove').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const urls = await loadUrls();
-      urls.splice(parseInt(btn.dataset.index, 10), 1);
-      await saveUrls(urls);
-      renderList(urls);
-      showToast('URL removed');
-    });
+// Stagger-animate all currently rendered items
+function staggerItems() {
+  document.querySelectorAll('#url-list .url-item').forEach((item, i) => {
+    item.style.animationDelay = `${i * 40}ms`;
+    item.classList.add('animate-in');
   });
 }
 
@@ -165,7 +205,7 @@ function resetClearButton() {
   const btn = document.getElementById('btn-clear');
   btn.classList.remove('confirming');
   btn.innerHTML = `
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
     </svg>
     Clear All`;
@@ -174,7 +214,9 @@ function resetClearButton() {
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
-  renderList(await loadUrls());
+  const initialUrls = await loadUrls();
+  renderList(initialUrls);
+  staggerItems(); // stagger-animate items on startup
 
   // Add current tab URL
   document.getElementById('btn-add').addEventListener('click', async () => {
@@ -196,6 +238,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     urls.push(clean);
     await saveUrls(urls);
     renderList(urls);
+    // Animate and scroll to the new last item
+    const newItem = document.querySelector('#url-list .url-item:last-child');
+    if (newItem) {
+      newItem.classList.add('animate-in');
+      newItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
     showToast('URL added');
   });
 
@@ -210,23 +258,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     for (const raw of validUrls) {
       if (urls.length >= URL_LIMIT) break;
       const clean = cleanUrl(raw);
-      if (!urls.includes(clean)) {
-        urls.push(clean);
-        added++;
-      }
+      if (!urls.includes(clean)) { urls.push(clean); added++; }
     }
     await saveUrls(urls);
     renderList(urls);
+    staggerItems();
     showToast(added === 0 ? 'All tabs already in list' : `Added ${added} URL${added !== 1 ? 's' : ''}`);
   });
 
-  // Copy all
+  // Copy with success state
   document.getElementById('btn-copy').addEventListener('click', async () => {
     const urls = await loadUrls();
     if (urls.length === 0) { showToast('Nothing to copy'); return; }
     try {
       await navigator.clipboard.writeText(urls.join('\n'));
-      showToast(`Copied ${urls.length} URL${urls.length !== 1 ? 's' : ''}`);
+      const btn = document.getElementById('btn-copy');
+      const savedHTML = btn.innerHTML;
+      btn.classList.add('success');
+      btn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+        </svg>
+        Copied!`;
+      setTimeout(() => {
+        btn.classList.remove('success');
+        btn.innerHTML = savedHTML;
+      }, 1500);
     } catch {
       showToast('Clipboard access denied');
     }
@@ -287,7 +344,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (urls.length === 0) { showToast('List is already empty'); return; }
       btn.classList.add('confirming');
       btn.innerHTML = `
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
         </svg>
         Confirm Clear`;
